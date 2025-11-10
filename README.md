@@ -48,8 +48,6 @@ This repository is designed to be:
    - Reasonable operating voltage & robustness
 
 
-## 2. Key Concepts | 核心思路
-
 1. 将器件结构设计视作 **序列决策问题**。
 2. RL agent 负责提出结构候选：
    - 层序（HTL / QD / ZnO / 缓冲层等）
@@ -86,7 +84,6 @@ This repository is designed to be:
     - 2D/3D carrier & recombination maps
     - RL training curves
 
-## 3. Features | 功能特性
 
 - 🔁 **RL 环境封装 / RL Environment**
   - 统一管理结构参数、设计采样与评估调用
