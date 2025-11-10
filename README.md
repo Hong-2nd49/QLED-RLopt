@@ -17,15 +17,36 @@ Core goals:
 - Consider **3D carrier transport**: lateral (x–y) + vertical (z)
 - Optimize **EQE, charge balance, recombination distribution, emission uniformity**
 
-QLED-RLopt 面向科研与高阶应用场景，目标是将 **强化学习** 与 **器件物理仿真/代理模型** 结合，用于自动搜索和优化：
+QLED-RLopt 面向科研应用，结合**强化学习算法**与**器件物理仿真**，用于自动探索和优化 QLED 器件结构，重点关注：
+- 多层与微/纳结构（如 ZnO / QD / HTL 交替堆叠或平面图案化）
+- 同时考虑横向 (x–y) 与纵向 (z) 的三维载流子输运行为
+- 关键指标：外量子效率（EQE）、电荷注入平衡、复合区分布、发光均匀性等
 
-- 多层与微/纳结构 QLED 器件（如 ZnO–QD 平面图案化、多发光层叠结构）
-- 真实三维载流子注入与输运行为
-- 外量子效率（EQE）、电荷平衡、复合区分布与发光均匀性等关键指标
+This repository is designed to be:
+- **Scientifically rigorous** – physics-informed reward and constraints
+- **Modular & extensible** – plug in COMSOL/Lumerical/TCAD or surrogate models
+- **Application-ready** for computational materials/device groups (e.g. SAM Lab)
 
 设计理念：**不是一次性脚本，而是可插拔、可扩展的研究基础设施**。
 
 ---
+
+## 2. Key Ideas | 核心思路
+
+1. Treat QLED architecture search as a **sequential decision problem**.
+2. Use an RL agent to propose:
+   - Layer sequences (HTL / QD / ZnO / interlayers)
+   - Micro/nano patterns (e.g., ZnO:QD fill factor, repeated stacks)
+   - Thicknesses, doping, interface modifiers
+3. Evaluate each design via:
+   - Direct device simulations (COMSOL / Lumerical / other TCAD)
+   - Or a learned **surrogate model** approximating those simulations
+4. Optimize for:
+   - High EQE
+   - Strong electron–hole overlap
+   - Smooth recombination profiles (no harsh hotspots)
+   - Reasonable operating voltage & robustness
+
 
 ## 2. Key Concepts | 核心思路
 
@@ -41,6 +62,30 @@ QLED-RLopt 面向科研与高阶应用场景，目标是将 **强化学习** 与
 
 ---
 
+
+## 3. Features | 功能特性
+
+- 🔁 **RL Environment**
+  - Encodes QLED structures into a compact parameter space
+  - Interfaces with simulators or surrogate models
+
+- 🤖 **Pluggable RL Agents**
+  - Baseline DQN / policy-gradient implementations
+  - Easy to swap/customize algorithms
+
+- 📊 **Physics-Guided Reward**
+  - Combines EQE, recombination uniformity, and penalty terms
+  - Encourages physically meaningful, fabricable designs
+
+- 🧪 **Surrogate Modeling (Optional)**
+  - Train ML models on simulation data to accelerate exploration
+
+- 📈 **Analysis & Visualization**
+  - Jupyter notebooks for:
+    - Design-performance landscapes
+    - 2D/3D carrier & recombination maps
+    - RL training curves
+
 ## 3. Features | 功能特性
 
 - 🔁 **RL 环境封装 / RL Environment**
@@ -53,17 +98,6 @@ QLED-RLopt 面向科研与高阶应用场景，目标是将 **强化学习** 与
   - 基于仿真数据训练 MLP / GNN，加速大规模搜索
 - 📊 **可视化与分析 / Visualization**
   - Jupyter Notebooks 展示设计–性能关系与 RL 收敛过程
-
----
----
-## 5. Installation | 安装
-git clone https://github.com/<your-username>/QLED-RLopt.git
-cd QLED-RLopt
-pip install -r requirements.txt
-
-
-
-Python ≥ 3.9，默认依赖：numpy, pandas, scipy, matplotlib, torch, tqdm 等。
 
 ---
 
@@ -103,6 +137,18 @@ QLED-RLopt/
 └── LICENSE
 
 ```
+---
+## 5. Installation | 安装
+git clone https://github.com/<your-username>/QLED-RLopt.git
+cd QLED-RLopt
+pip install -r requirements.txt
+
+
+
+Python ≥ 3.9，默认依赖：numpy, pandas, scipy, matplotlib, torch, tqdm 等。
+
+---
+
 ## 6. Quick Start | 快速开始
 6.1 运行强化学习优化
 python scripts/run_optimization.py --episodes 50
