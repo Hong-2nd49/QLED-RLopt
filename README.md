@@ -140,7 +140,7 @@ python scripts/run_optimization.py --episodes 50
 
 ## 8. Academic Use | 学术使用
 
-如在论文、报告或申请材料中使用本框架，建议：
+如在论文、报告或申请材料中使用本框架，```
 
 简要说明奖励设计与仿真边界条件
 
@@ -149,7 +149,7 @@ python scripts/run_optimization.py --episodes 50
 
 ## 9. License | 许可
 
-建议使用 MIT License（默认），支持团队协作与二次开发。
+使用 MIT License（默认），支持团队协作与二次开发。
 ---
 
 
