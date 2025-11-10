@@ -1,0 +1,5 @@
+    def _mock_surrogate(self, design: dict) -> dict:
+        if self.surrogate is not None:
+            return self.surrogate.predict(design)
+        # Fallback if not trained yet
+        return self._mock_physics(design)
