@@ -1,0 +1,7 @@
+numpy
+pandas
+matplotlib
+scipy
+torch         # or comment out if not using deep models yet
+gymnasium     # if you later wrap it as a Gym env
+tqdm
