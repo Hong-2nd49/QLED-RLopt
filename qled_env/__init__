@@ -1,0 +1,4 @@
+if self.use_surrogate:
+    self.surrogate = SurrogatePredictor()
+else:
+    self.surrogate = None
