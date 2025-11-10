@@ -55,6 +55,19 @@ QLED-RLopt 面向科研与高阶应用场景，目标是将 **强化学习** 与
   - Jupyter Notebooks 展示设计–性能关系与 RL 收敛过程
 
 ---
+---
+## 5. Installation | 安装
+git clone https://github.com/<your-username>/QLED-RLopt.git
+cd QLED-RLopt
+pip install -r requirements.txt
+
+
+
+Python ≥ 3.9，默认依赖：numpy, pandas, scipy, matplotlib, torch, tqdm 等。
+
+---
+
+
 
 ## 4. Repository Structure | 仓库结构
 
@@ -88,18 +101,8 @@ QLED-RLopt/
 │   ├── test_reward_logic.py     # 奖励函数单测
 │   └── test_simulator_interface.py
 └── LICENSE
----
-## 5. Installation | 安装
-git clone https://github.com/<your-username>/QLED-RLopt.git
-cd QLED-RLopt
-pip install -r requirements.txt
 
-
-
-Python ≥ 3.9，默认依赖：numpy, pandas, scipy, matplotlib, torch, tqdm 等。
-
----
-
+```
 ## 6. Quick Start | 快速开始
 6.1 运行强化学习优化
 python scripts/run_optimization.py --episodes 50
@@ -148,3 +151,5 @@ python scripts/run_optimization.py --episodes 50
 
 建议使用 MIT License（默认），支持团队协作与二次开发。
 ---
+
+
