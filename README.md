@@ -46,7 +46,7 @@ This repository is designed to be:
    - Strong electron–hole overlap
    - Smooth recombination profiles (no harsh hotspots)
    - Reasonable operating voltage & robustness
-
+---
 
 1. 将器件结构设计视作 **序列决策问题**。
 2. RL agent 负责提出结构候选：
