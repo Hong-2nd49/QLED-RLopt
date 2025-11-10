@@ -1,0 +1,29 @@
+QLED-RLopt/
+├── README.md
+├── requirements.txt
+├── qled_env/
+│   ├── __init__.py
+│   ├── parameter_space.py
+│   ├── reward_function.py
+│   ├── simulator_interface.py
+│   └── comsol_parser.py
+├── agent/
+│   ├── __init__.py
+│   └── dqn_agent.py
+├── surrogate_model/
+│   ├── __init__.py
+│   ├── train_surrogate.py
+│   └── predict_performance.py
+├── data/
+│   ├── generated_designs.csv
+│   └── simulated_results/        # (empty or placeholder .gitkeep)
+├── scripts/
+│   ├── run_optimization.py
+│   └── simulate_design.py
+├── notebooks/
+│   ├── 01_explore_parameter_space.ipynb
+│   └── 02_visualize_rl_results.ipynb
+├── tests/
+│   ├── test_reward_logic.py
+│   └── test_simulator_interface.py
+└── LICENSE
