@@ -45,7 +45,7 @@ class QLEDRLEnv(gym.Env):
         self.x = None
         self.last_metrics = None
 
-        # ---- reward shaping memory ----
+        # reward shaping memory
         self._U_prev = None
         self._prev_x = None  # normalized param vector from previous step
 
@@ -65,7 +65,7 @@ class QLEDRLEnv(gym.Env):
         params_real = self.ps.to_real(self.x)
         self.last_metrics = self.simulator.evaluate(params_real)
 
-        # ---- reset shaping memory ----
+        # reset shaping memory
         self._U_prev = None
         self._prev_x = self.x.copy()
 
@@ -76,14 +76,12 @@ class QLEDRLEnv(gym.Env):
     def step(self, action):
         self.step_count += 1
 
-        # cache previous state for shaping
         prev_x = None if self._prev_x is None else self._prev_x.copy()
         U_prev = self._U_prev
 
         action = np.asarray(action, dtype=np.float32)
         action = np.clip(action, -1.0, 1.0)
 
-        # update normalized parameters
         self.x = self.x + self.action_scale * action
         self.x = np.clip(self.x, -1.0, 1.0)
 
@@ -92,17 +90,16 @@ class QLEDRLEnv(gym.Env):
         violation = self.ps.constraint_violation(params_real)
         metrics = self.simulator.evaluate(params_real)
 
-        # ---- compute delta_params_norm in normalized space (stable & simple) ----
+        # delta_params_norm in normalized space
         try:
             if prev_x is None:
                 delta_params_norm = float(np.linalg.norm(self.x))
             else:
                 delta_params_norm = float(np.linalg.norm(self.x - prev_x))
         except Exception:
-            # fallback: norm of action (scaled)
             delta_params_norm = float(np.linalg.norm(action) * self.action_scale)
 
-        # ---- inject shaping signals for reward function ----
+        # inject shaping signals
         metrics["U_prev"] = U_prev
         metrics["delta_params_norm"] = delta_params_norm
 
@@ -116,8 +113,7 @@ class QLEDRLEnv(gym.Env):
 
         self.last_metrics = metrics
 
-        # ---- update shaping memory for next step ----
-        # reward_info may contain "U" if you use reward v4; if not, keep previous
+        # update shaping memory
         self._U_prev = reward_info.get("U", self._U_prev)
         self._prev_x = self.x.copy()
 
