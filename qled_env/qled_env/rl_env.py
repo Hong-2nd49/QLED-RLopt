@@ -65,7 +65,6 @@ class QLEDRLEnv(gym.Env):
         params_real = self.ps.to_real(self.x)
         self.last_metrics = self.simulator.evaluate(params_real)
 
-        # reset shaping memory
         self._U_prev = None
         self._prev_x = self.x.copy()
 
@@ -99,16 +98,21 @@ class QLEDRLEnv(gym.Env):
         except Exception:
             delta_params_norm = float(np.linalg.norm(action) * self.action_scale)
 
-        # boundary_penalty: discourage hugging edges (|x| -> 1)
-        # 0 when |x| <= 0.90, grows to 1 when |x| -> 1
-        margin = 0.90
+        # stronger boundary penalty (4th power makes edges expensive)
+        margin = 0.88
         excess = np.maximum(0.0, np.abs(self.x) - margin) / (1.0 - margin)
-        boundary_penalty = float(np.mean(excess ** 2))
+        boundary_penalty = float(np.mean(excess ** 4))
 
-        # inject shaping signals
+        # EML thin penalty (engineering prior): thin EML often increases leakage/quenching
+        t_eml = float(params_real.get("t_EML_nm", 0.0))
+        eml_floor = 15.0
+        eml_thin_penalty = float(max(0.0, (eml_floor - t_eml) / eml_floor) ** 2)
+
+        # inject shaping signals for reward
         metrics["U_prev"] = U_prev
         metrics["delta_params_norm"] = delta_params_norm
         metrics["boundary_penalty"] = boundary_penalty
+        metrics["eml_thin_penalty"] = eml_thin_penalty
         metrics["V_drive"] = float(params_real.get("V_drive", 0.0))
 
         reward, reward_info = compute_reward(metrics, violation)
