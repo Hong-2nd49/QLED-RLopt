@@ -4,6 +4,7 @@ from stable_baselines3 import PPO
 from qled_env.qled_env.rl_env import QLEDRLEnv
 from qled_env.qled_env.parameter_space import ParameterSpace
 from qled_env.qled_env.simulator_interface import SimulatorInterface
+from qled_env.qled_env.surrogate_sim import SurrogateSim
 
 
 class DummySim(SimulatorInterface):
@@ -16,7 +17,7 @@ class DummySim(SimulatorInterface):
 
 if __name__ == "__main__":
     ps = ParameterSpace()
-    env = QLEDRLEnv(simulator=DummySim(), param_space=ps, max_steps=30, action_scale=0.05)
+    env = QLEDRLEnv(simulator=SurrogateSim(), param_space=ps, max_steps=30, action_scale=0.05)
 
     model = PPO("MlpPolicy", env, verbose=1, n_steps=256, batch_size=64, gamma=0.98, learning_rate=3e-4)
     model.learn(total_timesteps=10_000)
