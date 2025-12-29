@@ -7,23 +7,24 @@ def _clamp(x: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, x))
 
 
-def _safe(x: float, default: float = 0.0) -> float:
+def _safe_float(x: Any, default: float = 0.0) -> float:
     try:
-        x = float(x)
-        if math.isnan(x) or math.isinf(x):
+        v = float(x)
+        if math.isnan(v) or math.isinf(v):
             return default
-        return x
+        return v
     except Exception:
         return default
 
 
-def _log_eps(x: float, eps: float = 1e-6) -> float:
-    # log(eps + max(0,x))
-    return math.log(eps + max(0.0, x))
-
-
-def _log1p(x: float) -> float:
-    return math.log1p(max(0.0, x))
+def _log1p_norm(x: float, ref: float) -> float:
+    """
+    Normalize non-negative x into ~[0,1] with log1p scaling.
+    x=ref -> ~1.
+    """
+    x = max(0.0, float(x))
+    ref = max(1e-12, float(ref))
+    return _clamp(math.log1p(x) / math.log1p(ref), 0.0, 1.5)
 
 
 def compute_reward(
@@ -31,116 +32,115 @@ def compute_reward(
     violation: Any = 0.0,
 ) -> Tuple[float, Dict[str, Any]]:
     """
-    Reward v4: physics-consistent + RL-stable.
+    Reward v5 (RL-stable + physics-consistent, avoids log-gate negativity):
+      - main: shaped EQE
+      - helpers: overlap/balance/droop bonuses (quadratic shaping)
+      - penalties: simulator penalty + constraint violation (log1p), plus jump penalty
+      - progress shaping: small + dU using U_prev (optional)
 
-    Optional keys in metrics:
-      EQE, recomb_overlap, inj_balance, droop, penalty
-      brightness, lifetime, auger_rate, leakage
-      U_prev (previous utility), delta_params_norm (||Δparams||), step (int)
+    Returns (reward, reward_info). reward is clipped to [-10, 10].
     """
 
-    # ---- read metrics (robust) ----
-    eqe = _safe(metrics.get("EQE", metrics.get("eqe", 0.0)), 0.0)
-    overlap = _clamp(_safe(metrics.get("recomb_overlap", metrics.get("overlap", 0.0)), 0.0), 0.0, 1.0)
-    balance = _clamp(_safe(metrics.get("inj_balance", metrics.get("balance", 0.0)), 0.0), 0.0, 1.0)
-    droop = _clamp(_safe(metrics.get("droop", 1.0), 1.0), 0.0, 1.0)
+    # ---- core metrics ----
+    eqe = _safe_float(metrics.get("EQE", metrics.get("eqe", 0.0)), 0.0)
+    overlap = _clamp(_safe_float(metrics.get("recomb_overlap", 0.0), 0.0), 0.0, 1.0)
+    balance = _clamp(_safe_float(metrics.get("inj_balance", 0.0), 0.0), 0.0, 1.0)
+    droop = _clamp(_safe_float(metrics.get("droop", 1.0), 1.0), 0.0, 1.0)
 
-    brightness = _safe(metrics.get("brightness", 0.0), 0.0)
-    lifetime = _safe(metrics.get("lifetime", 0.0), 0.0)
-    auger = _safe(metrics.get("auger_rate", metrics.get("auger", 0.0)), 0.0)
-    leakage = _safe(metrics.get("leakage", 0.0), 0.0)
+    # optional metrics (may be missing)
+    brightness = _safe_float(metrics.get("brightness", 0.0), 0.0)
+    lifetime = _safe_float(metrics.get("lifetime", 0.0), 0.0)
+    auger = _safe_float(metrics.get("auger_rate", metrics.get("auger", 0.0)), 0.0)
+    leakage = _safe_float(metrics.get("leakage", 0.0), 0.0)
 
-    metric_penalty = _safe(metrics.get("penalty", 0.0), 0.0)
-    delta_params_norm = _safe(metrics.get("delta_params_norm", 0.0), 0.0)
+    metric_penalty = _safe_float(metrics.get("penalty", 0.0), 0.0)
+
+    # shaping signals injected by env
     U_prev = metrics.get("U_prev", None)
-    U_prev = None if U_prev is None else _safe(U_prev, None)
+    U_prev = None if U_prev is None else _safe_float(U_prev, None)
+    delta_params_norm = _safe_float(metrics.get("delta_params_norm", 0.0), 0.0)
 
-    # ---- constraint penalties ----
+    # ---- constraint violation aggregation ----
     if isinstance(violation, dict):
-        constraint_penalty = sum(max(0.0, _safe(v, 0.0)) for v in violation.values())
+        constraint_penalty = sum(max(0.0, _safe_float(v, 0.0)) for v in violation.values())
     else:
-        constraint_penalty = max(0.0, _safe(violation, 0.0))
+        constraint_penalty = max(0.0, _safe_float(violation, 0.0))
 
     total_penalty = metric_penalty + constraint_penalty
 
-    # ---- utility in log-space (multiplicative in disguise, but stable) ----
-    # EQE main trunk, others are gates in log domain.
-    # Add eps so low overlap/balance still has gradient (doesn't go -inf).
-    eps_gate = 1e-3
+    # ---- normalize / shape ----
+    # EQE: assume percent-like 0..20 (from your SurrogateSim). adjust ref if needed.
+    eqe_s = _log1p_norm(eqe, ref=20.0)          # ~0..1.5
+    bri_s = _log1p_norm(brightness, ref=1000.0)
+    life_s = _log1p_norm(lifetime, ref=1000.0)
+    auger_s = _log1p_norm(auger, ref=1.0)
+    leak_s = _log1p_norm(leakage, ref=1.0)
 
-    U_eqe = _log_eps(eqe, eps=1e-3)                # main objective
-    U_overlap = math.log(eps_gate + overlap)       # [-6.9, 0] roughly
-    U_balance = math.log(eps_gate + balance)
-    U_droop = math.log(eps_gate + droop)
+    # quadratic shaping to encourage near-1 without log negativity
+    overlap_q = overlap * overlap
+    balance_q = balance * balance
+    droop_q = droop * droop
 
-    # optional “application” objectives (small weights)
-    U_bri = _log1p(brightness)                     # >=0
-    U_life = _log1p(lifetime)                      # >=0
+    # ---- IMPORTANT: avoid double-counting droop ----
+    # In your SurrogateSim, EQE already includes droop multiplier.
+    # So we keep droop bonus small, as a gentle preference (mainly for stability).
+    w_eqe = 3.0
+    w_overlap = 1.0
+    w_balance = 1.0
+    w_droop = 0.25
 
-    # non-radiative / leakage penalties (>=0)
-    P_auger = _log1p(auger)
-    P_leak = _log1p(leakage)
+    w_bri = 0.10
+    w_life = 0.15
+    w_auger = 0.20
+    w_leak = 0.20
 
-    # ---- weights (start conservative) ----
-    w_eqe = 1.0
-    w_overlap = 0.6
-    w_balance = 0.6
-    w_droop = 0.3
+    # penalties
+    w_pen = 1.2
+    w_jump = 0.6       # encourages smooth parameter changes
+    w_delta = 0.6      # progress shaping weight (keep moderate)
 
-    w_bri = 0.05
-    w_life = 0.08
-
-    w_auger = 0.12
-    w_leak = 0.12
-
-    w_pen = 0.8                 # penalty weight
-    w_jump = 0.15               # discourage huge parameter jumps
-    w_delta = 0.25              # progress shaping (keep modest)
-
-    # ---- combine utility ----
+    # ---- base utility (always roughly >= 0 if things are decent) ----
     U = (
-        w_eqe * U_eqe
-        + w_overlap * U_overlap
-        + w_balance * U_balance
-        + w_droop * U_droop
-        + w_bri * U_bri
-        + w_life * U_life
-        - w_auger * P_auger
-        - w_leak * P_leak
-        - w_pen * _log1p(total_penalty)
+        w_eqe * eqe_s
+        + w_overlap * overlap_q
+        + w_balance * balance_q
+        + w_droop * droop_q
+        + w_bri * bri_s
+        + w_life * life_s
+        - w_auger * auger_s
+        - w_leak * leak_s
+        - w_pen * math.log1p(max(0.0, total_penalty))
         - w_jump * (delta_params_norm ** 2)
     )
 
-    # ---- progress shaping (optional, needs env to pass U_prev) ----
     dU = 0.0
     if U_prev is not None:
         dU = U - U_prev
 
-    U_shaped = U + w_delta * dU
-
-    # ---- soft threshold bonus (tiny) ----
-    # Smoothly adds a small bonus when EQE surpasses practical thresholds.
+    # ---- sparse-ish bonus (tiny, smooth-ish) ----
     bonus = 0.0
-    if eqe > 0.0:
-        bonus += 0.10 * (1.0 / (1.0 + math.exp(-0.6 * (eqe - 10.0))))
-        bonus += 0.15 * (1.0 / (1.0 + math.exp(-0.6 * (eqe - 20.0))))
+    if eqe > 10.0:
+        bonus += 0.10
+    if eqe > 20.0:
+        bonus += 0.15
 
-    U_shaped += bonus
+    raw_reward = U + w_delta * dU + bonus
 
-    # ---- scale + bound for RL stability ----
-    # tanh keeps reward nicely bounded; multiply to get around [-10, 10]
-    reward = 10.0 * math.tanh(U_shaped)
+    # scale + clip for PPO stability
+    reward = _clamp(5.0 * raw_reward, -10.0, 10.0)
 
     info = {
-        "reward": reward,
         "U": U,
-        "U_shaped": U_shaped,
         "dU": dU,
         "bonus": bonus,
         "eqe": eqe,
+        "eqe_s": eqe_s,
         "overlap": overlap,
+        "overlap_q": overlap_q,
         "inj_balance": balance,
+        "balance_q": balance_q,
         "droop": droop,
+        "droop_q": droop_q,
         "brightness": brightness,
         "lifetime": lifetime,
         "auger_rate": auger,
@@ -149,6 +149,8 @@ def compute_reward(
         "constraint_penalty": constraint_penalty,
         "total_penalty": total_penalty,
         "delta_params_norm": delta_params_norm,
+        "raw_reward": raw_reward,
+        "reward": reward,
         "weights": {
             "w_eqe": w_eqe,
             "w_overlap": w_overlap,
@@ -161,7 +163,7 @@ def compute_reward(
             "w_pen": w_pen,
             "w_jump": w_jump,
             "w_delta": w_delta,
-        }
+        },
     }
 
     return float(reward), info
