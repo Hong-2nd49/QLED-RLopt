@@ -13,12 +13,12 @@ def _clamp(x: float, lo: float, hi: float) -> float:
 
 class SurrogateSim(SimulatorInterface):
     """
-    SurrogateSim v2: adds realistic-ish trade-offs.
-    - brightness increases with V_drive (saturating)
-    - droop decreases with brightness and V_drive
-    - leakage includes baseline + doping term (can't be zero just because balance=1)
-    - auger grows with brightness and high drive
-    - lifetime decreases with leakage/auger/drive/doping
+    SurrogateSim v3:
+      - overlap peak narrower (center ~18nm, sigma ~5) so EML needs to be near optimum
+      - thin EML increases leakage + reduces lifetime (pinholes/quenching proxy)
+      - brightness increases with V_drive (saturating)
+      - droop decreases with brightness and auger
+      - leakage can't be ~0 just because inj_balance ~1
     """
 
     def evaluate(self, params):
@@ -40,15 +40,16 @@ class SurrogateSim(SimulatorInterface):
 
         V = float(params["V_drive"])
 
-        # --- injection balance proxy ---
+        # injection balance proxy
         barrier_mismatch = abs((phi_h - 5.2) - (4.1 - phi_e))
         inj_balance = float(np.exp(- (barrier_mismatch ** 2) / 0.06))
         inj_boost = _sigmoid(8.0 * (p_d + n_d - 0.15))
 
-        # --- recombination overlap peaks near ~18nm ---
-        overlap = float(np.exp(-((t_eml - 18.0) ** 2) / (2 * 7.0**2)))
+        # recombination overlap (narrower peak)
+        sigma = 5.0
+        overlap = float(np.exp(-((t_eml - 18.0) ** 2) / (2 * sigma**2)))
 
-        # --- outcoupling proxies (PS + SL) ---
+        # outcoupling proxies
         mie_gain = 1.0 + 0.6 * np.exp(-((ps_r - 120.0) ** 2) / (2 * 55.0**2))
         cov_gain = 1.0 + 0.7 * np.clip(ps_ff / 0.30, 0.0, 1.0)
         sl_gain = 1.0 + 0.4 * np.exp(-((sl_t - 15.0) ** 2) / (2 * 6.0**2))
@@ -56,26 +57,31 @@ class SurrogateSim(SimulatorInterface):
         qd_gain = 0.6 + 0.4 * qd_cov
         outcoupling = float(mie_gain * cov_gain * sl_gain * gap_gain * qd_gain)
 
-        # --- brightness driven by V (saturating), boosted by overlap & injection ---
+        # brightness driven by V (saturating), boosted by overlap & injection
         drive = max(0.0, V - 2.2)
-        V_term = 1.0 - np.exp(-drive / 1.1)  # 0..~1
-        brightness = float(250.0 + 1600.0 * V_term * (0.55 + 0.45 * inj_boost) * (0.55 + 0.45 * overlap))
+        V_term = 1.0 - np.exp(-drive / 1.1)
+        brightness = float(250.0 + 1700.0 * V_term * (0.55 + 0.45 * inj_boost) * (0.50 + 0.50 * overlap))
 
-        # --- leakage: baseline + doping + morphology + imbalance (not zero at balance=1) ---
+        # thin EML penalty (engineering prior)
+        eml_floor = 15.0
+        thin_eml = max(0.0, (eml_floor - t_eml) / eml_floor)  # 0..1+
+
+        # leakage: baseline + doping + imbalance + morphology + thin-EML term
         leakage = (
-            0.05
-            + 0.55 * (p_d + n_d)                # doping always adds some leakage
-            + 0.45 * (1.0 - inj_balance)        # imbalance increases leakage
-            + 0.30 * max(0.0, ps_ff - 0.30)      # too dense PS can create leakage paths
+            0.06
+            + 0.55 * (p_d + n_d)
+            + 0.45 * (1.0 - inj_balance)
+            + 0.30 * max(0.0, ps_ff - 0.30)
+            + 0.55 * thin_eml
         )
         leakage = float(max(0.0, leakage))
 
-        # --- auger & droop: worsen with brightness and high drive ---
-        auger_rate = float((brightness / 1400.0) ** 2 * max(0.0, V - 3.2))
-        droop = float(1.0 / (1.0 + (brightness / 1600.0) ** 2 + 0.6 * auger_rate))
+        # auger & droop
+        auger_rate = float((brightness / 1300.0) ** 2 * max(0.0, V - 3.0))
+        droop = float(1.0 / (1.0 + (brightness / 1600.0) ** 2 + 0.8 * auger_rate))
         droop = _clamp(droop, 0.05, 1.0)
 
-        # --- penalties (soft constraints) ---
+        # soft penalties (constraints)
         penalty = 0.0
         if ps_ff > 0.45:
             penalty += (ps_ff - 0.45) * 6.0
@@ -84,13 +90,12 @@ class SurrogateSim(SimulatorInterface):
         if sl_gap < 0.5:
             penalty += (0.5 - sl_gap) * 2.5
 
-        # --- EQE proxy ---
+        # EQE proxy (soft-saturated)
         eqe_raw = 22.0 * inj_balance * (0.55 + 0.45 * inj_boost) * overlap * outcoupling * droop
-        # soften extreme values (avoid crazy blow-up)
         eqe = float(40.0 * np.tanh(eqe_raw / 40.0))
 
-        # --- lifetime proxy ---
-        lifetime = 2000.0 / (1.0 + 2.5 * leakage + 3.5 * auger_rate + 0.20 * (max(0.0, V - 3.0) ** 2) + 0.8 * (p_d + n_d))
+        # lifetime proxy: depends on leakage/auger/drive and thin-EML
+        lifetime = 2000.0 / (1.0 + 2.8 * leakage + 4.0 * auger_rate + 0.22 * (max(0.0, V - 3.0) ** 2) + 0.9 * (p_d + n_d) + 1.2 * thin_eml)
         lifetime = float(_clamp(lifetime, 50.0, 2000.0))
 
         return {
