@@ -45,9 +45,9 @@ class QLEDRLEnv(gym.Env):
         self.x = None
         self.last_metrics = None
 
-        # reward shaping memory
+        # shaping memory
         self._U_prev = None
-        self._prev_x = None  # normalized param vector from previous step
+        self._prev_x = None
 
     def reset(self, *, seed=None, options=None):
         super().reset(seed=seed)
@@ -99,9 +99,17 @@ class QLEDRLEnv(gym.Env):
         except Exception:
             delta_params_norm = float(np.linalg.norm(action) * self.action_scale)
 
+        # boundary_penalty: discourage hugging edges (|x| -> 1)
+        # 0 when |x| <= 0.90, grows to 1 when |x| -> 1
+        margin = 0.90
+        excess = np.maximum(0.0, np.abs(self.x) - margin) / (1.0 - margin)
+        boundary_penalty = float(np.mean(excess ** 2))
+
         # inject shaping signals
         metrics["U_prev"] = U_prev
         metrics["delta_params_norm"] = delta_params_norm
+        metrics["boundary_penalty"] = boundary_penalty
+        metrics["V_drive"] = float(params_real.get("V_drive", 0.0))
 
         reward, reward_info = compute_reward(metrics, violation)
 
